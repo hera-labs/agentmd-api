@@ -1,0 +1,67 @@
+{
+  "name": "agentmd",
+  "displayName": "AgentMD Web-to-Markdown",
+  "description": "Convert a public web page URL into clean Markdown. Pay-per-call with Solana USDC via HTTP 402 (x402-shaped, direct-to-wallet, zero custody).",
+  "version": "1.0.0",
+  "protocol": "mcp-remote-http-tool",
+  "notes": [
+    "Classic MCP servers often speak JSON-RPC over stdio to a local process.",
+    "AgentMD is a remote HTTP API. Agents should call it as an HTTP tool (or wrap it with a thin stdio MCP proxy — see mcp/wrapper-sketch.ts comments in README).",
+    "Payment is required per call; the tool descriptor advertises price so agents can budget before invoking."
+  ],
+  "remote": {
+    "baseUrlEnv": "AGENTMD_BASE_URL",
+    "baseUrlExample": "https://your-app.onrender.com",
+    "openapi": "/openapi.json",
+    "x402Discovery": "/.well-known/x402",
+    "health": "/health"
+  },
+  "payment": {
+    "httpStatus": 402,
+    "protocolHint": "x402-v2-shaped",
+    "settlementMode": "direct-transfer-then-prove",
+    "headers": {
+      "challenge": "PAYMENT-REQUIRED",
+      "proof": "PAYMENT-SIGNATURE",
+      "result": "PAYMENT-RESPONSE"
+    },
+    "asset": "USDC",
+    "chain": "solana",
+    "typicalPriceUsdc": 0.01
+  },
+  "tools": [
+    {
+      "name": "scrape_to_markdown",
+      "description": "Fetch a public http(s) URL and return cleaned Markdown. Requires a prior or concurrent Solana USDC payment to the operator wallet advertised in the 402 challenge.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public web page URL (http or https only)."
+          },
+          "paymentTxSignature": {
+            "type": "string",
+            "description": "Optional Solana transaction signature proving payment. If omitted, the API returns HTTP 402 with payment instructions."
+          }
+        }
+      },
+      "http": {
+        "method": "POST",
+        "path": "/v1/scrape",
+        "contentType": "application/json"
+      },
+      "errors": {
+        "402": "Payment required — read PAYMENT-REQUIRED / JSON accepts[].payTo and amount, pay on-chain, retry with proof.",
+        "400": "Bad URL or SSRF blocked.",
+        "502": "Upstream fetch failed."
+      }
+    }
+  ],
+  "stdioWrapperSketch": {
+    "purpose": "If your agent host only loads stdio MCP servers, run a tiny Node process that exposes scrape_to_markdown and forwards to AgentMD HTTP.",
+    "env": ["AGENTMD_BASE_URL", "AGENT_SOLANA_KEY_OR_PAYMENT_HOOK"],
+    "warning": "Do not put the AgentMD operator seed phrase in the wrapper. Agents pay FROM their own wallet TO the operator payTo address."
+  }
+}
